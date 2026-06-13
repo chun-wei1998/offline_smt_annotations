@@ -1,0 +1,1273 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Offline CVAT SMT Annotator</title>
+  <style>
+    :root {
+      --bg: #f5f7f8;
+      --panel: #ffffff;
+      --ink: #18202a;
+      --muted: #66727f;
+      --line: #d8e0e6;
+      --accent: #187b73;
+      --accent-2: #db6b3d;
+      --danger: #b42318;
+      --shadow: 0 10px 30px rgba(24, 32, 42, 0.09);
+      font-family: "Segoe UI", "Noto Sans TC", Arial, sans-serif;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      color: var(--ink);
+      background: var(--bg);
+      overflow: hidden;
+    }
+
+    button, input, select, textarea {
+      font: inherit;
+    }
+
+    button {
+      border: 1px solid var(--line);
+      background: var(--panel);
+      color: var(--ink);
+      min-height: 34px;
+      border-radius: 6px;
+      padding: 7px 10px;
+      cursor: pointer;
+    }
+
+    button:hover { border-color: #9fb1bd; }
+    button:disabled { cursor: not-allowed; opacity: 0.48; }
+
+    .primary {
+      background: var(--accent);
+      border-color: var(--accent);
+      color: white;
+    }
+
+    .danger {
+      color: var(--danger);
+      border-color: #efb8b2;
+    }
+
+    .app {
+      height: 100vh;
+      display: grid;
+      grid-template-rows: 54px 1fr;
+    }
+
+    .topbar {
+      display: grid;
+      grid-template-columns: auto 1fr auto;
+      gap: 12px;
+      align-items: center;
+      padding: 9px 14px;
+      border-bottom: 1px solid var(--line);
+      background: var(--panel);
+      box-shadow: 0 1px 0 rgba(24, 32, 42, 0.03);
+      min-width: 0;
+    }
+
+    .brand {
+      font-weight: 700;
+      white-space: nowrap;
+    }
+
+    .toolbar, .actions {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      min-width: 0;
+    }
+
+    .toolbar {
+      overflow-x: auto;
+      padding-bottom: 2px;
+    }
+
+    .seg {
+      display: inline-grid;
+      grid-auto-flow: column;
+      border: 1px solid var(--line);
+      border-radius: 7px;
+      overflow: hidden;
+      background: #eef3f4;
+      flex: 0 0 auto;
+    }
+
+    .seg button {
+      border: 0;
+      border-radius: 0;
+      background: transparent;
+      min-width: 42px;
+    }
+
+    .seg button.active {
+      background: var(--accent);
+      color: white;
+    }
+
+    .file-input {
+      position: relative;
+      overflow: hidden;
+      display: inline-flex;
+    }
+
+    .file-input input {
+      position: absolute;
+      inset: 0;
+      opacity: 0;
+      cursor: pointer;
+    }
+
+    .main {
+      min-height: 0;
+      display: grid;
+      grid-template-columns: 250px minmax(360px, 1fr) 320px;
+    }
+
+    .sidebar, .inspector {
+      background: var(--panel);
+      border-right: 1px solid var(--line);
+      min-height: 0;
+      overflow: auto;
+      padding: 12px;
+    }
+
+    .inspector {
+      border-right: 0;
+      border-left: 1px solid var(--line);
+    }
+
+    .section {
+      margin-bottom: 16px;
+    }
+
+    .section h2 {
+      font-size: 13px;
+      letter-spacing: 0;
+      margin: 0 0 8px;
+      color: #3b4856;
+    }
+
+    .field {
+      display: grid;
+      gap: 5px;
+      margin-bottom: 10px;
+    }
+
+    .field label {
+      font-size: 12px;
+      color: var(--muted);
+    }
+
+    input, select, textarea {
+      width: 100%;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      padding: 7px 8px;
+      color: var(--ink);
+      background: white;
+    }
+
+    textarea {
+      resize: vertical;
+      min-height: 74px;
+    }
+
+    .stage-wrap {
+      min-width: 0;
+      min-height: 0;
+      display: grid;
+      grid-template-rows: 1fr 32px;
+      background:
+        linear-gradient(45deg, #e8edf0 25%, transparent 25%),
+        linear-gradient(-45deg, #e8edf0 25%, transparent 25%),
+        linear-gradient(45deg, transparent 75%, #e8edf0 75%),
+        linear-gradient(-45deg, transparent 75%, #e8edf0 75%);
+      background-size: 28px 28px;
+      background-position: 0 0, 0 14px, 14px -14px, -14px 0;
+    }
+
+    .stage {
+      position: relative;
+      overflow: auto;
+      min-height: 0;
+    }
+
+    .canvas-shell {
+      position: relative;
+      width: max-content;
+      height: max-content;
+      min-width: 100%;
+      min-height: 100%;
+      display: grid;
+      place-items: center;
+      padding: 28px;
+    }
+
+    .canvas-box {
+      position: relative;
+      box-shadow: var(--shadow);
+      background: #c7d2d9;
+      transform-origin: center center;
+    }
+
+    #imageLayer, #svgLayer {
+      display: block;
+      user-select: none;
+    }
+
+    #imageLayer {
+      max-width: none;
+    }
+
+    #svgLayer {
+      position: absolute;
+      inset: 0;
+      overflow: visible;
+      cursor: crosshair;
+    }
+
+    .statusbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      border-top: 1px solid var(--line);
+      background: rgba(255,255,255,0.92);
+      padding: 5px 10px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .list {
+      display: grid;
+      gap: 6px;
+    }
+
+    .item {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      align-items: center;
+      gap: 8px;
+      border: 1px solid var(--line);
+      border-radius: 7px;
+      padding: 8px;
+      background: #fbfcfd;
+      cursor: pointer;
+      min-width: 0;
+    }
+
+    .item.active {
+      border-color: var(--accent);
+      box-shadow: inset 3px 0 0 var(--accent);
+    }
+
+    .item-title {
+      font-size: 13px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .item-meta {
+      color: var(--muted);
+      font-size: 11px;
+      margin-top: 2px;
+    }
+
+    .empty {
+      color: var(--muted);
+      border: 1px dashed var(--line);
+      border-radius: 7px;
+      padding: 12px;
+      font-size: 13px;
+      line-height: 1.5;
+    }
+
+    .label-row {
+      display: grid;
+      grid-template-columns: 18px 1fr auto;
+      gap: 8px;
+      align-items: center;
+      border: 1px solid var(--line);
+      border-radius: 7px;
+      padding: 6px;
+      background: #fbfcfd;
+    }
+
+    .label-dot {
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      border: 1px solid rgba(24, 32, 42, 0.18);
+    }
+
+    .icon-btn {
+      min-width: 30px;
+      width: 30px;
+      height: 30px;
+      padding: 0;
+      display: inline-grid;
+      place-items: center;
+    }
+
+    .small {
+      min-height: 30px;
+      padding: 5px 8px;
+    }
+
+    .progress-line {
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.5;
+      margin-bottom: 8px;
+    }
+
+    .swatch {
+      width: 14px;
+      height: 14px;
+      border-radius: 5px;
+      border: 2px solid white;
+      outline: 1px solid var(--line);
+      padding: 0;
+    }
+
+    .swatch.active {
+      outline: 2px solid var(--ink);
+    }
+
+    .row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+    }
+
+    .color-dot {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      border-radius: 999px;
+      background: #e7f4f2;
+      color: #0b514c;
+      padding: 4px 8px;
+      font-size: 12px;
+    }
+
+    .modal {
+      position: fixed;
+      inset: 0;
+      background: rgba(12, 18, 24, 0.45);
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: 18px;
+      z-index: 30;
+    }
+
+    .modal.open {
+      display: flex;
+    }
+
+    .dialog {
+      width: min(720px, 100%);
+      max-height: min(720px, 90vh);
+      overflow: auto;
+      background: white;
+      border-radius: 8px;
+      box-shadow: var(--shadow);
+      padding: 16px;
+    }
+
+    .dialog h2 {
+      margin: 0 0 12px;
+      font-size: 18px;
+    }
+
+    .help-block {
+      margin: 0 0 14px;
+    }
+
+    .help-block h3 {
+      margin: 0 0 8px;
+      font-size: 14px;
+    }
+
+    .help-block ol {
+      margin: 0;
+      padding-left: 20px;
+      color: #334155;
+      line-height: 1.65;
+      font-size: 13px;
+    }
+
+    .help-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+    }
+
+    .help-table th,
+    .help-table td {
+      border: 1px solid var(--line);
+      padding: 7px 8px;
+      text-align: left;
+    }
+
+    .help-table th {
+      background: #eef3f4;
+      color: #334155;
+    }
+
+    .dialog-actions {
+      display: flex;
+      justify-content: flex-end;
+      gap: 8px;
+      margin-top: 12px;
+    }
+
+    @media (max-width: 980px) {
+      body { overflow: auto; }
+      .app { height: auto; min-height: 100vh; }
+      .topbar { grid-template-columns: 1fr; }
+      .main { grid-template-columns: 1fr; }
+      .sidebar, .inspector {
+        border: 0;
+        border-bottom: 1px solid var(--line);
+        max-height: none;
+      }
+      .stage-wrap { min-height: 62vh; }
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <header class="topbar">
+      <div class="brand">Offline CVAT SMT Annotator</div>
+      <div class="toolbar">
+        <label class="file-input">
+          <button type="button">載入資料夾</button>
+          <input id="fileInput" type="file" accept="image/*" multiple webkitdirectory directory>
+        </label>
+        <div class="seg" aria-label="工具">
+          <button id="toolSelect" class="active" title="選取/移動">選取</button>
+          <button id="toolPolygon" title="多邊形標註">POLYGON</button>
+        </div>
+        <button id="finishPolygonBtn" disabled title="完成目前 POLYGON">完成</button>
+        <button id="cancelDraftBtn" disabled title="取消目前繪製">取消</button>
+        <button id="prevBtn" title="上一張">上一張</button>
+        <button id="nextBtn" title="下一張">下一張</button>
+      </div>
+      <div class="actions">
+        <button id="helpBtn" title="使用說明">說明</button>
+        <button id="saveBtn" title="保存標註 JSON">保存</button>
+        <label class="file-input">
+          <button type="button">讀取</button>
+          <input id="annotationFileInput" type="file" accept="application/json,.json">
+        </label>
+        <button id="exportBtn" class="primary" title="輸出 CVAT 1.1 XML">匯出 XML</button>
+      </div>
+    </header>
+
+    <main class="main">
+      <aside class="sidebar">
+        <section class="section">
+          <h2>任務</h2>
+          <div class="field">
+            <label for="taskName">Task name</label>
+            <input id="taskName" value="SMT offline annotation">
+          </div>
+          <div class="field">
+            <label for="ownerName">Owner</label>
+            <input id="ownerName" value="offline">
+          </div>
+        </section>
+        <section class="section">
+          <h2>類別</h2>
+          <div class="field">
+            <label for="labelSelect">目前類別</label>
+            <select id="labelSelect"></select>
+          </div>
+          <div class="field">
+            <label for="newLabelInput">新增類別</label>
+            <div class="row">
+              <input id="newLabelInput" placeholder="例如 missing_component">
+              <button id="addLabelBtn" class="small" type="button">新增</button>
+            </div>
+          </div>
+          <div id="labelList" class="list"></div>
+        </section>
+        <section class="section">
+          <h2>影像</h2>
+          <div class="progress-line" id="imageProgress">總共 0 張，已標記 0 張，目前 0 / 0</div>
+          <div id="imageList" class="list">
+            <div class="empty">請載入 SMT 圖片資料夾。</div>
+          </div>
+        </section>
+      </aside>
+
+      <section class="stage-wrap">
+        <div class="stage" id="stage">
+          <div class="canvas-shell">
+            <div class="canvas-box" id="canvasBox">
+              <img id="imageLayer" alt="">
+              <svg id="svgLayer"></svg>
+            </div>
+          </div>
+        </div>
+        <div class="statusbar">
+          <span id="statusText">尚未載入圖片</span>
+          <span id="coordText">x: -, y: -</span>
+        </div>
+      </section>
+
+      <aside class="inspector">
+        <section class="section">
+          <h2>標註</h2>
+          <div id="annotationList" class="list">
+            <div class="empty">尚無標註。</div>
+          </div>
+        </section>
+        <section class="section">
+          <h2>內容</h2>
+          <div id="editorPanel" class="empty">選取標註後可編輯 label、文字與屬性。</div>
+        </section>
+      </aside>
+    </main>
+  </div>
+
+  <div class="modal" id="helpModal" role="dialog" aria-modal="true">
+    <div class="dialog">
+      <h2>使用說明</h2>
+      <div class="help-block">
+        <h3>操作流程</h3>
+        <ol>
+          <li>按「載入資料夾」選擇 SMT 圖片資料夾。</li>
+          <li>在左側「類別」選擇目前要標註的英文類別。</li>
+          <li>按「POLYGON」，在圖片上依序點選多邊形頂點，雙擊或按「完成」結束。</li>
+          <li>選取已完成的 polygon，可在右側修改類別、文字說明與屬性。</li>
+          <li>按「保存」下載 JSON 標註檔；下次重新開啟後，載入圖片資料夾再按「讀取」選 JSON。</li>
+          <li>按「匯出 XML」輸出 CVAT 1.1 XML。</li>
+        </ol>
+      </div>
+      <div class="help-block">
+        <h3>中英對照表</h3>
+        <table class="help-table">
+          <thead>
+            <tr><th>中文名稱</th><th>英文名稱</th></tr>
+          </thead>
+          <tbody id="helpLabelTable"></tbody>
+        </table>
+      </div>
+      <div class="dialog-actions">
+        <button id="helpClose" class="primary">關閉</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const state = {
+      images: [],
+      current: -1,
+      tool: "select",
+      selectedId: null,
+      label: "ok",
+      draft: [],
+      drag: null,
+      labels: new Map(),
+      savedAnnotations: new Map()
+    };
+
+    const palette = ["#18a999", "#db6b3d", "#2e77bb", "#8b5cf6", "#d33f49", "#f2a900", "#2f7d32", "#111827", "#0f766e", "#be185d", "#4d7c0f", "#7c2d12"];
+    const LABEL_TRANSLATIONS = [
+      ["正常", "ok"],
+      ["缺件", "missing"],
+      ["偏移", "shift"],
+      ["立碑", "tombstone"],
+      ["空焊", "open"],
+      ["側立", "sideflip"],
+      ["損件", "damage"],
+      ["翻轉", "overturn"],
+      ["異物", "foreign_material"],
+      ["極反", "polarity"],
+      ["錯件", "wrong_part"],
+      ["連錫", "bridge"],
+      ["少錫", "less_solder"]
+    ];
+    const DEFAULT_LABELS = LABEL_TRANSLATIONS.map(([, english]) => english);
+    const els = {
+      fileInput: document.getElementById("fileInput"),
+      annotationFileInput: document.getElementById("annotationFileInput"),
+      imageList: document.getElementById("imageList"),
+      imageProgress: document.getElementById("imageProgress"),
+      annotationList: document.getElementById("annotationList"),
+      editorPanel: document.getElementById("editorPanel"),
+      imageLayer: document.getElementById("imageLayer"),
+      svgLayer: document.getElementById("svgLayer"),
+      canvasBox: document.getElementById("canvasBox"),
+      statusText: document.getElementById("statusText"),
+      coordText: document.getElementById("coordText"),
+      labelSelect: document.getElementById("labelSelect"),
+      newLabelInput: document.getElementById("newLabelInput"),
+      addLabelBtn: document.getElementById("addLabelBtn"),
+      labelList: document.getElementById("labelList"),
+      finishPolygonBtn: document.getElementById("finishPolygonBtn"),
+      cancelDraftBtn: document.getElementById("cancelDraftBtn"),
+      taskName: document.getElementById("taskName"),
+      ownerName: document.getElementById("ownerName"),
+      helpModal: document.getElementById("helpModal"),
+      helpLabelTable: document.getElementById("helpLabelTable")
+    };
+
+    function uid() {
+      return Math.random().toString(36).slice(2) + Date.now().toString(36);
+    }
+
+    function xmlEscape(value) {
+      return String(value ?? "")
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;")
+        .replaceAll("'", "&apos;");
+    }
+
+    function setTool(tool) {
+      state.tool = tool;
+      document.querySelectorAll(".seg button").forEach(btn => btn.classList.remove("active"));
+      document.getElementById(`tool${tool[0].toUpperCase()}${tool.slice(1)}`)?.classList.add("active");
+      updateDraftButtons();
+    }
+
+    function currentImage() {
+      return state.images[state.current] || null;
+    }
+
+    function colorForLabel(label) {
+      let hash = 0;
+      for (const ch of label) hash = ((hash << 5) - hash + ch.charCodeAt(0)) | 0;
+      return palette[Math.abs(hash) % palette.length];
+    }
+
+    function ensureLabel(label, color = colorForLabel(label)) {
+      if (!label) return;
+      if (!state.labels.has(label)) state.labels.set(label, { color, attributes: new Set(["text"]) });
+      if (!state.label) state.label = label;
+      renderLabels();
+    }
+
+    function ensureDefaultLabels() {
+      DEFAULT_LABELS.forEach(label => ensureLabel(label));
+      if (!state.label || !state.labels.has(state.label)) state.label = "ok";
+    }
+
+    function renderHelpTable() {
+      els.helpLabelTable.innerHTML = LABEL_TRANSLATIONS
+        .map(([chinese, english]) => `<tr><td>${xmlEscape(chinese)}</td><td>${xmlEscape(english)}</td></tr>`)
+        .join("");
+    }
+
+    function sortedLabels() {
+      return Array.from(state.labels.keys()).sort((a, b) => a.localeCompare(b));
+    }
+
+    function renderLabels() {
+      const labels = sortedLabels();
+      if (!labels.includes(state.label)) state.label = labels[0] || "";
+      els.labelSelect.innerHTML = labels
+        .map(name => `<option value="${xmlEscape(name)}" ${name === state.label ? "selected" : ""}>${xmlEscape(name)}</option>`)
+        .join("");
+      els.labelList.innerHTML = labels.map(name => {
+        const used = labelUsage(name);
+        const color = state.labels.get(name)?.color || colorForLabel(name);
+        return `<div class="label-row">
+          <span class="label-dot" style="background:${color}"></span>
+          <div class="item-title">${xmlEscape(name)} <span class="item-meta">${used} 個 polygon</span></div>
+          <button class="icon-btn danger" data-delete-label="${xmlEscape(name)}" title="刪除類別">×</button>
+        </div>`;
+      }).join("") || `<div class="empty">請新增至少一個類別。</div>`;
+      els.labelList.querySelectorAll("[data-delete-label]").forEach(btn => {
+        btn.addEventListener("click", () => deleteLabel(btn.dataset.deleteLabel));
+      });
+    }
+
+    function labelUsage(label) {
+      return state.images.reduce((sum, img) => sum + img.annotations.filter(ann => ann.type === "polygon" && ann.label === label).length, 0);
+    }
+
+    function currentLabelColor() {
+      return state.labels.get(state.label)?.color || colorForLabel(state.label || "ok");
+    }
+
+    function addLabel() {
+      const name = els.newLabelInput.value.trim();
+      if (!name) return;
+      ensureLabel(name);
+      state.label = name;
+      els.newLabelInput.value = "";
+      renderAll();
+    }
+
+    function deleteLabel(label) {
+      if (state.labels.size <= 1) return alert("至少需要保留一個類別。");
+      const used = labelUsage(label);
+      if (used > 0) return alert(`類別「${label}」仍有 ${used} 個 polygon 使用，請先改成其他類別再刪除。`);
+      state.labels.delete(label);
+      if (state.label === label) state.label = sortedLabels()[0] || "";
+      renderAll();
+    }
+
+    function normalizeAnnotation(ann) {
+      const label = ann.label || state.label || "ok";
+      const text = ann.text || ann.attrs?.text || "";
+      return {
+        ...ann,
+        id: ann.id || uid(),
+        type: "polygon",
+        label,
+        color: state.labels.get(label)?.color || ann.color || colorForLabel(label),
+        points: Array.isArray(ann.points) ? ann.points : [],
+        text,
+        attrs: { ...(ann.attrs || {}), text }
+      };
+    }
+
+    function imageKeys(img) {
+      return [img.name, img.fileName].filter(Boolean);
+    }
+
+    function mergeSavedAnnotations() {
+      state.images.forEach(img => {
+        for (const key of imageKeys(img)) {
+          const saved = state.savedAnnotations.get(key);
+          if (saved) {
+            img.annotations = saved.map(normalizeAnnotation);
+            break;
+          }
+        }
+      });
+    }
+
+    function fileToImage(file) {
+      return new Promise((resolve, reject) => {
+        const url = URL.createObjectURL(file);
+        const img = new Image();
+        img.onload = () => resolve({
+          id: state.images.length,
+          name: file.webkitRelativePath || file.name,
+          fileName: file.name,
+          width: img.naturalWidth,
+          height: img.naturalHeight,
+          url,
+          annotations: []
+        });
+        img.onerror = reject;
+        img.src = url;
+      });
+    }
+
+    async function loadFiles(files) {
+      const loaded = [];
+      for (const file of files) {
+        if (!file.type.startsWith("image/")) continue;
+        loaded.push(await fileToImage(file));
+      }
+      loaded.sort((a, b) => a.name.localeCompare(b.name));
+      state.images.forEach(img => {
+        if (img.url?.startsWith("blob:")) URL.revokeObjectURL(img.url);
+      });
+      state.images = loaded;
+      if (state.current < 0 && state.images.length) state.current = 0;
+      else if (!state.images.length) state.current = -1;
+      else state.current = Math.min(state.current, state.images.length - 1);
+      mergeSavedAnnotations();
+      renderAll();
+    }
+
+    function selectImage(index) {
+      if (index < 0 || index >= state.images.length) return;
+      state.current = index;
+      state.selectedId = null;
+      state.draft = [];
+      renderAll();
+    }
+
+    function imagePoint(evt) {
+      const img = currentImage();
+      if (!img) return null;
+      const rect = els.svgLayer.getBoundingClientRect();
+      const x = Math.max(0, Math.min(img.width, (evt.clientX - rect.left) * img.width / rect.width));
+      const y = Math.max(0, Math.min(img.height, (evt.clientY - rect.top) * img.height / rect.height));
+      return { x: Number(x.toFixed(2)), y: Number(y.toFixed(2)) };
+    }
+
+    function finishPolygon() {
+      const img = currentImage();
+      if (!img || state.draft.length < 3) return;
+      const label = state.label || sortedLabels()[0] || "ok";
+      ensureLabel(label);
+      const color = state.labels.get(label)?.color || colorForLabel(label);
+      const ann = { id: uid(), type: "polygon", label, color, points: [...state.draft], text: "", attrs: { text: "" } };
+      img.annotations.push(ann);
+      state.selectedId = ann.id;
+      state.draft = [];
+      updateDraftButtons();
+      renderAll();
+    }
+
+    function selectedAnnotation() {
+      const img = currentImage();
+      return img?.annotations.find(a => a.id === state.selectedId) || null;
+    }
+
+    function deleteSelected() {
+      const img = currentImage();
+      if (!img || !state.selectedId) return;
+      img.annotations = img.annotations.filter(a => a.id !== state.selectedId);
+      state.selectedId = null;
+      renderAll();
+    }
+
+    function renderImages() {
+      renderImageProgress();
+      if (!state.images.length) {
+        els.imageList.innerHTML = `<div class="empty">請載入 SMT 圖片資料夾。</div>`;
+        return;
+      }
+      els.imageList.innerHTML = state.images.map((img, idx) => `
+        <div class="item ${idx === state.current ? "active" : ""}" data-image-index="${idx}">
+          <div>
+            <div class="item-title">${xmlEscape(img.name)}</div>
+            <div class="item-meta">${img.width} x ${img.height} · ${img.annotations.filter(ann => ann.type === "polygon").length} polygon</div>
+          </div>
+          <span>${img.annotations.some(ann => ann.type === "polygon") ? "✓" : idx + 1}</span>
+        </div>
+      `).join("");
+      els.imageList.querySelectorAll("[data-image-index]").forEach(el => {
+        el.addEventListener("click", () => selectImage(Number(el.dataset.imageIndex)));
+      });
+    }
+
+    function renderImageProgress() {
+      const total = state.images.length;
+      const marked = state.images.filter(img => img.annotations.some(ann => ann.type === "polygon")).length;
+      const current = total ? state.current + 1 : 0;
+      els.imageProgress.textContent = `總共 ${total} 張，已標記 ${marked} 張，目前 ${current} / ${total}`;
+    }
+
+    function renderStage() {
+      const img = currentImage();
+      if (!img) {
+        els.imageLayer.removeAttribute("src");
+        els.canvasBox.style.width = "1px";
+        els.canvasBox.style.height = "1px";
+        els.svgLayer.setAttribute("width", 1);
+        els.svgLayer.setAttribute("height", 1);
+        els.svgLayer.innerHTML = "";
+        els.statusText.textContent = "尚未載入圖片";
+        return;
+      }
+      els.imageLayer.src = img.url;
+      els.imageLayer.width = img.width;
+      els.imageLayer.height = img.height;
+      els.canvasBox.style.width = `${img.width}px`;
+      els.canvasBox.style.height = `${img.height}px`;
+      els.svgLayer.setAttribute("width", img.width);
+      els.svgLayer.setAttribute("height", img.height);
+      els.svgLayer.setAttribute("viewBox", `0 0 ${img.width} ${img.height}`);
+      els.statusText.textContent = `${img.name} · ${img.width} x ${img.height}`;
+
+      const shapes = img.annotations.map(ann => {
+        const selected = ann.id === state.selectedId;
+        if (ann.type === "polygon") {
+          const pts = ann.points.map(p => `${p.x},${p.y}`).join(" ");
+          const handles = ann.points.map((p, i) => `<circle cx="${p.x}" cy="${p.y}" r="5" fill="${selected ? "#fff" : ann.color}" stroke="${ann.color}" stroke-width="2" data-ann="${ann.id}" data-point="${i}"></circle>`).join("");
+          return `<g data-ann="${ann.id}">
+            <polygon points="${pts}" fill="${ann.color}33" stroke="${ann.color}" stroke-width="${selected ? 4 : 2}"></polygon>
+            ${handles}
+          </g>`;
+        }
+        return "";
+      }).join("");
+
+      const draftPoly = state.draft.length ? `
+        <polyline points="${state.draft.map(p => `${p.x},${p.y}`).join(" ")}" fill="none" stroke="${currentLabelColor()}" stroke-width="2" stroke-dasharray="6 5"></polyline>
+        ${state.draft.map(p => `<circle cx="${p.x}" cy="${p.y}" r="4" fill="${currentLabelColor()}"></circle>`).join("")}
+      ` : "";
+
+      els.svgLayer.innerHTML = shapes + draftPoly;
+      els.svgLayer.querySelectorAll("[data-ann]").forEach(el => {
+        el.addEventListener("pointerdown", evt => {
+          evt.stopPropagation();
+          state.selectedId = el.dataset.ann;
+          const pointIndex = el.dataset.point;
+          if (pointIndex !== undefined) {
+            state.drag = { annId: el.dataset.ann, pointIndex: Number(pointIndex) };
+            els.svgLayer.setPointerCapture(evt.pointerId);
+          }
+          renderListsAndEditor();
+        });
+      });
+    }
+
+    function renderAnnotations() {
+      const img = currentImage();
+      if (!img || !img.annotations.length) {
+        els.annotationList.innerHTML = `<div class="empty">尚無標註。</div>`;
+        return;
+      }
+      els.annotationList.innerHTML = img.annotations.map((ann, idx) => {
+        const text = ann.text || ann.attrs?.text || "";
+        const meta = text ? `${ann.points.length} points · ${xmlEscape(text)}` : `${ann.points.length} points`;
+        return `<div class="item ${ann.id === state.selectedId ? "active" : ""}" data-ann-id="${ann.id}">
+          <div>
+            <div class="item-title">${idx + 1}. POLYGON · ${xmlEscape(ann.label)}</div>
+            <div class="item-meta">${meta}</div>
+          </div>
+          <span class="color-dot" style="background:${ann.color}22;color:${ann.color}">●</span>
+        </div>`;
+      }).join("");
+      els.annotationList.querySelectorAll("[data-ann-id]").forEach(el => {
+        el.addEventListener("click", () => {
+          state.selectedId = el.dataset.annId;
+          renderAll();
+        });
+      });
+    }
+
+    function renderEditor() {
+      const ann = selectedAnnotation();
+      if (!ann) {
+        els.editorPanel.className = "empty";
+        els.editorPanel.innerHTML = "選取標註後可編輯 label、文字與屬性。";
+        return;
+      }
+      els.editorPanel.className = "";
+      const attrLines = Object.entries(ann.attrs || {})
+        .filter(([key]) => key !== "text")
+        .map(([key, value]) => `${key}=${value}`).join("\n");
+      const labelOptions = sortedLabels()
+        .map(name => `<option value="${xmlEscape(name)}" ${name === ann.label ? "selected" : ""}>${xmlEscape(name)}</option>`)
+        .join("");
+      els.editorPanel.innerHTML = `
+        <div class="field">
+          <label for="editType">類型</label>
+          <input id="editType" value="${ann.type.toUpperCase()}" disabled>
+        </div>
+        <div class="field">
+          <label for="editLabel">Label</label>
+          <select id="editLabel">${labelOptions}</select>
+        </div>
+        <div class="field">
+          <label for="editText">文字說明</label>
+          <textarea id="editText">${xmlEscape(ann.text || ann.attrs?.text || "")}</textarea>
+        </div>
+        <div class="field">
+          <label for="editAttrs">屬性，一行一個 key=value</label>
+          <textarea id="editAttrs">${xmlEscape(attrLines)}</textarea>
+        </div>
+        <div class="row">
+          <button id="applyEdit" class="primary">套用</button>
+          <button id="deleteEdit" class="danger">刪除</button>
+        </div>`;
+      document.getElementById("applyEdit").addEventListener("click", () => {
+        ann.label = document.getElementById("editLabel").value || ann.label;
+        ann.color = state.labels.get(ann.label)?.color || colorForLabel(ann.label);
+        ann.text = document.getElementById("editText").value;
+        ann.attrs = { ...parseAttrs(document.getElementById("editAttrs").value), text: ann.text || "" };
+        renderAll();
+      });
+      document.getElementById("deleteEdit").addEventListener("click", deleteSelected);
+    }
+
+    function parseAttrs(text) {
+      const attrs = {};
+      text.split(/\r?\n/).forEach(line => {
+        const clean = line.trim();
+        if (!clean) return;
+        const eq = clean.indexOf("=");
+        if (eq < 0) attrs[clean] = "";
+        else attrs[clean.slice(0, eq).trim()] = clean.slice(eq + 1).trim();
+      });
+      return attrs;
+    }
+
+    function renderListsAndEditor() {
+      renderAnnotations();
+      renderEditor();
+    }
+
+    function renderAll() {
+      renderImages();
+      renderStage();
+      renderListsAndEditor();
+      updateDraftButtons();
+      renderLabels();
+    }
+
+    function updateDraftButtons() {
+      els.finishPolygonBtn.disabled = state.draft.length < 3;
+      els.cancelDraftBtn.disabled = state.draft.length === 0;
+    }
+
+    function exportXml() {
+      const now = new Date().toISOString();
+      const labels = new Map(Array.from(state.labels.entries()).map(([name, val]) => [name, { color: val.color || colorForLabel(name), attributes: new Set(["text"]) }]));
+      state.images.forEach(img => img.annotations
+        .filter(ann => ann.type === "polygon")
+        .forEach(ann => {
+          if (!labels.has(ann.label)) labels.set(ann.label, { color: ann.color || colorForLabel(ann.label), attributes: new Set(["text"]) });
+        }));
+      const labelXml = Array.from(labels.keys()).sort((a, b) => a.localeCompare(b)).map(name => `
+      <label>
+        <name>${xmlEscape(name)}</name>
+        <color>${xmlEscape(labels.get(name)?.color || "#18a999")}</color>
+        <type>polygon</type>
+        <attributes>
+          <attribute>
+            <name>text</name>
+            <mutable>True</mutable>
+            <input_type>text</input_type>
+            <default_value></default_value>
+            <values></values>
+          </attribute>
+        </attributes>
+      </label>`).join("");
+
+      const imagesXml = state.images.map((img, idx) => {
+        const anns = img.annotations.filter(ann => ann.type === "polygon").map((ann, z) => {
+          ann.attrs = { ...(ann.attrs || {}), text: ann.text || ann.attrs?.text || "" };
+          const attrs = Object.entries(ann.attrs || {}).map(([key, value]) => `
+        <attribute name="${xmlEscape(key)}">${xmlEscape(value)}</attribute>`).join("");
+          const points = ann.points.map(p => `${trimNum(p.x)},${trimNum(p.y)}`).join(";");
+          return `    <polygon label="${xmlEscape(ann.label)}" source="manual" occluded="0" points="${points}" z_order="${z}">${attrs}
+    </polygon>`;
+        }).join("\n");
+        return `  <image id="${idx}" name="${xmlEscape(img.name)}" width="${img.width}" height="${img.height}">
+${anns}
+  </image>`;
+      }).join("\n");
+
+      const xml = `<?xml version="1.0" encoding="utf-8"?>
+<annotations>
+  <version>1.1</version>
+  <meta>
+    <task>
+      <id>0</id>
+      <name>${xmlEscape(els.taskName.value || "SMT offline annotation")}</name>
+      <size>${state.images.length}</size>
+      <mode>annotation</mode>
+      <overlap>0</overlap>
+      <bugtracker></bugtracker>
+      <flipped>False</flipped>
+      <created>${now}</created>
+      <updated>${now}</updated>
+      <labels>${labelXml}
+      </labels>
+      <segments>
+        <segment>
+          <id>0</id>
+          <start>0</start>
+          <stop>${Math.max(0, state.images.length - 1)}</stop>
+          <url></url>
+        </segment>
+      </segments>
+      <owner>
+        <username>${xmlEscape(els.ownerName.value || "offline")}</username>
+        <email></email>
+      </owner>
+      <assignee></assignee>
+      <subset>default</subset>
+      <start_frame>0</start_frame>
+      <stop_frame>${Math.max(0, state.images.length - 1)}</stop_frame>
+      <frame_filter></frame_filter>
+    </task>
+    <dumped>${now}</dumped>
+  </meta>
+${imagesXml}
+</annotations>`;
+      download(`cvat_smt_annotations_${dateStamp()}.xml`, xml, "application/xml");
+    }
+
+    function trimNum(value) {
+      return Number(value).toFixed(2).replace(/\.?0+$/, "");
+    }
+
+    function dateStamp() {
+      const d = new Date();
+      return `${d.getFullYear()}${String(d.getMonth()+1).padStart(2,"0")}${String(d.getDate()).padStart(2,"0")}_${String(d.getHours()).padStart(2,"0")}${String(d.getMinutes()).padStart(2,"0")}`;
+    }
+
+    function download(name, content, type) {
+      const blob = new Blob([content], { type });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = name;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    }
+
+    function annotationData() {
+      return {
+        version: "offline-cvat-smt-annotator.v2",
+        taskName: els.taskName.value,
+        ownerName: els.ownerName.value,
+        current: state.current,
+        selectedLabel: state.label,
+        labels: Array.from(state.labels.entries()).map(([name, val]) => [name, { color: val.color || colorForLabel(name), attributes: Array.from(val.attributes || []) }]),
+        images: state.images.map(img => ({
+          id: img.id,
+          name: img.name,
+          fileName: img.fileName || img.name,
+          width: img.width,
+          height: img.height,
+          annotations: img.annotations.filter(ann => ann.type === "polygon").map(normalizeAnnotation)
+        }))
+      };
+    }
+
+    async function saveLocal() {
+      const data = annotationData();
+      const content = JSON.stringify(data, null, 2);
+      const fileName = `offline_smt_annotations_${dateStamp()}.json`;
+      if (window.showSaveFilePicker) {
+        try {
+          const handle = await window.showSaveFilePicker({
+            suggestedName: fileName,
+            types: [{
+              description: "JSON annotation file",
+              accept: { "application/json": [".json"] }
+            }]
+          });
+          const writable = await handle.createWritable();
+          await writable.write(content);
+          await writable.close();
+          return;
+        } catch (err) {
+          if (err?.name === "AbortError") return;
+        }
+      }
+      download(fileName, content, "application/json");
+    }
+
+    function applyAnnotationData(data) {
+      els.taskName.value = data.taskName || els.taskName.value;
+      els.ownerName.value = data.ownerName || els.ownerName.value;
+      state.labels = new Map((data.labels || []).map(([name, val]) => [name, { color: val.color || colorForLabel(name), attributes: new Set(val.attributes || ["text"]) }]));
+      if (!state.labels.size) ensureDefaultLabels();
+      state.label = data.selectedLabel || sortedLabels()[0] || "ok";
+      state.savedAnnotations = new Map();
+      (data.images || []).forEach(saved => {
+        const annotations = (saved.annotations || []).filter(ann => ann.type === "polygon").map(normalizeAnnotation);
+        [saved.name, saved.fileName].filter(Boolean).forEach(key => state.savedAnnotations.set(key, annotations));
+      });
+      const byName = new Map(state.images.map(img => [img.name, img]));
+      if (state.images.length) {
+        mergeSavedAnnotations();
+      } else {
+        state.images = (data.images || []).map(saved => ({
+          ...saved,
+          url: byName.get(saved.name)?.url || "",
+          annotations: (saved.annotations || []).filter(ann => ann.type === "polygon").map(normalizeAnnotation)
+        }));
+      }
+      state.current = state.images.length ? Math.min(Math.max(data.current || 0, 0), state.images.length - 1) : -1;
+      renderAll();
+    }
+
+    function loadAnnotationFile(file) {
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = () => {
+        try {
+          const data = JSON.parse(reader.result);
+          applyAnnotationData(data);
+        } catch (err) {
+          alert("標註檔讀取失敗，請確認是本工具保存的 JSON。");
+        }
+      };
+      reader.readAsText(file, "utf-8");
+    }
+
+    els.fileInput.addEventListener("change", evt => loadFiles(evt.target.files));
+    els.annotationFileInput.addEventListener("change", evt => loadAnnotationFile(evt.target.files[0]));
+    els.labelSelect.addEventListener("change", () => {
+      state.label = els.labelSelect.value;
+      renderStage();
+    });
+    els.addLabelBtn.addEventListener("click", addLabel);
+    els.newLabelInput.addEventListener("keydown", evt => {
+      if (evt.key === "Enter") addLabel();
+    });
+    document.getElementById("toolSelect").addEventListener("click", () => setTool("select"));
+    document.getElementById("toolPolygon").addEventListener("click", () => setTool("polygon"));
+    document.getElementById("finishPolygonBtn").addEventListener("click", finishPolygon);
+    document.getElementById("cancelDraftBtn").addEventListener("click", () => { state.draft = []; renderAll(); });
+    document.getElementById("prevBtn").addEventListener("click", () => selectImage(state.current - 1));
+    document.getElementById("nextBtn").addEventListener("click", () => selectImage(state.current + 1));
+    document.getElementById("exportBtn").addEventListener("click", exportXml);
+    document.getElementById("saveBtn").addEventListener("click", saveLocal);
+    document.getElementById("helpBtn").addEventListener("click", () => els.helpModal.classList.add("open"));
+    document.getElementById("helpClose").addEventListener("click", () => els.helpModal.classList.remove("open"));
+    els.helpModal.addEventListener("click", evt => {
+      if (evt.target === els.helpModal) els.helpModal.classList.remove("open");
+    });
+
+    els.svgLayer.addEventListener("click", evt => {
+      const img = currentImage();
+      if (!img) return;
+      const point = imagePoint(evt);
+      if (!point) return;
+      if (state.tool === "polygon") {
+        state.draft.push(point);
+        renderStage();
+        updateDraftButtons();
+      }
+    });
+
+    els.svgLayer.addEventListener("dblclick", evt => {
+      if (state.tool === "polygon" && state.draft.length >= 3) {
+        evt.preventDefault();
+        finishPolygon();
+      }
+    });
+
+    els.svgLayer.addEventListener("pointermove", evt => {
+      const point = imagePoint(evt);
+      if (point) els.coordText.textContent = `x: ${trimNum(point.x)}, y: ${trimNum(point.y)}`;
+      if (!state.drag) return;
+      const img = currentImage();
+      const ann = img?.annotations.find(a => a.id === state.drag.annId);
+      if (ann?.points[state.drag.pointIndex] && point) {
+        ann.points[state.drag.pointIndex] = point;
+        renderStage();
+      }
+    });
+
+    els.svgLayer.addEventListener("pointerup", () => { state.drag = null; });
+    window.addEventListener("keydown", evt => {
+      if (evt.key === "Escape") {
+        state.draft = [];
+        renderAll();
+      }
+      if (evt.key === "Delete" || evt.key === "Backspace") {
+        if (!["INPUT", "TEXTAREA"].includes(document.activeElement.tagName)) deleteSelected();
+      }
+      if (evt.key === "Enter" && state.tool === "polygon" && state.draft.length >= 3) finishPolygon();
+    });
+
+    ensureDefaultLabels();
+    renderHelpTable();
+    renderAll();
+  </script>
+</body>
+</html>
